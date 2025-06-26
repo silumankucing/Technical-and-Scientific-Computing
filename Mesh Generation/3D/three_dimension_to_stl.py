@@ -57,4 +57,4 @@ for i, f in enumerate(faces):
 
 # Save to STL file
 
-cube_mesh.save('3d_mesh.stl')
+cube_mesh.save('mesh.stl')
