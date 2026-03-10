@@ -41,7 +41,7 @@ class VTKViewer(QMainWindow):
         if points is not None and polygons is not None:
             for poly in polygons:
                 pts = points[poly]
-                pts = np.vstack([pts, pts[0]])  # close the polygon
+                pts = np.vstack([pts, pts[0]])
                 self.ax.plot(pts[:,0], pts[:,1], 'k-')
             if scalars is not None:
                 scatter = self.ax.scatter(points[:,0], points[:,1], c=scalars, cmap='viridis', s=80)
