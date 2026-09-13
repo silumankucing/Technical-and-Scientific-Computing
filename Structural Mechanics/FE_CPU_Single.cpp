@@ -179,8 +179,32 @@ public:
             }
         }
 
+        // Terapkan Boundary Conditions (Metode Eliminasi Baris & Kolom)
+        // Iterasi langsung pada matriks sparse berisiko salah karena Eigen
+        // menyimpan matriks dalam format column-major, sehingga di sini
+        // triplets dimodifikasi sebelum matriks K dibentuk.
+        std::vector<bool> fixed_dof(total_dofs, false);
+        std::vector<double> fixed_value(total_dofs, 0.0);
+        for (const auto& bc : bcs) {
+            int idx = node_id_to_index[bc.node_id];
+            int global_dof = idx * 2 + (bc.dof - 1);
+            fixed_dof[global_dof] = true;
+            fixed_value[global_dof] = bc.value;
+        }
+
+        std::vector<Eigen::Triplet<double>> modifiedTriplets;
+        for (const auto& trip : triplets) {
+            if (fixed_dof[trip.row()] || fixed_dof[trip.col()]) {
+                if (trip.row() == trip.col() && fixed_dof[trip.row()]) {
+                    modifiedTriplets.push_back(Eigen::Triplet<double>(trip.row(), trip.col(), 1.0));
+                }
+                continue; // buang entri pada baris/kolom yang dikekak
+            }
+            modifiedTriplets.push_back(trip);
+        }
+
         Eigen::SparseMatrix<double> K(total_dofs, total_dofs);
-        K.setFromTriplets(triplets.begin(), triplets.end());
+        K.setFromTriplets(modifiedTriplets.begin(), modifiedTriplets.end());
 
         Eigen::VectorXd F = Eigen::VectorXd::Zero(total_dofs);
         for (const auto& load : loads) {
@@ -188,16 +212,8 @@ public:
             int global_dof = idx * 2 + (load.dof - 1);
             F(global_dof) += load.magnitude;
         }
-
-        // Terapkan Boundary Conditions
-        for (const auto& bc : bcs) {
-            int idx = node_id_to_index[bc.node_id];
-            int global_dof = idx * 2 + (bc.dof - 1);
-
-            for (Eigen::SparseMatrix<double>::InnerIterator it(K, global_dof); it; ++it) {
-                it.valueRef() = (it.row() == global_dof) ? 1.0 : 0.0;
-            }
-            F(global_dof) = bc.value;
+        for (int d = 0; d < total_dofs; ++d) {
+            if (fixed_dof[d]) F(d) = fixed_value[d];
         }
 
         // Solve K * U = F
@@ -275,11 +291,30 @@ public:
     }
 };
 
-int main() {
+int main(int argc, char* argv[]) {
     FEMSolver solver;
-    if (solver.parseINP("input.inp")) {
+
+    // Input file dari argumen command line: ./FE_CPU_Single.exe input.inp
+    if (argc < 2) {
+        std::cerr << "Penggunaan: " << argv[0] << " <file_input>.inp" << std::endl;
+        return 1;
+    }
+    std::string inputFilename = argv[1];
+
+    // Nama file output otomatis: ganti ekstensi .inp menjadi .vtk
+    std::string outputFilename;
+    size_t dotPos = inputFilename.find_last_of('.');
+    if (dotPos != std::string::npos && inputFilename.substr(dotPos) == ".inp") {
+        outputFilename = inputFilename.substr(0, dotPos) + ".vtk";
+    } else {
+        outputFilename = inputFilename + ".vtk";
+    }
+
+    if (solver.parseINP(inputFilename)) {
         solver.solve();
-        solver.exportVTK("output.vtk");
+        solver.exportVTK(outputFilename);
+    } else {
+        return 1;
     }
     return 0;
 }
