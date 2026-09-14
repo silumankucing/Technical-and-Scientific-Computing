@@ -7,7 +7,6 @@
 #include <cmath>
 #include <chrono>
 #include <cuda_runtime.h>
-
 enum class BCType { DIRICHLET, NEUMANN, ROBIN };
 
 struct BoundaryCondition {

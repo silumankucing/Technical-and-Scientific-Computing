@@ -1,1 +1,1 @@
- clang++ -O3 -std=c++20 -Xpreprocessor -fopenmp Heat_Conduction.cpp -o Heat_Conduction -lomp
+ clang++ -O3 -std=c++20 -Xpreprocessor -fopenmp Heat_Conduction_GPU.cpp -o Heat_Conduction_GPU -lomp
