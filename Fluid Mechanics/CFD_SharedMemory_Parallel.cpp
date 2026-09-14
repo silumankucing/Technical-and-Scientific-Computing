@@ -12,7 +12,7 @@ struct Node {
     double x, y, z;
 };
 
-// Struct Cell dinamis (Mendukung 2D Quad/Tri & 3D Hex/Tet)
+// Struct Cell dinamis (2D Quad/Tri & 3D Hex/Tet)
 struct Cell {
     int id;
     int dim;                   // 2 untuk 2D, 3 untuk 3D
@@ -21,7 +21,7 @@ struct Cell {
     double volume;             // Luas (2D) atau Volume (3D)
 };
 
-// Struct Boundary Face
+// Struct Boundary Element
 struct BoundaryElement {
     int id;
     int physical_tag;          // Tag boundary (1: inlet, 2: outflow, 3: wall)
@@ -40,7 +40,7 @@ public:
     const double rho = 998.2;    // kg/m^3
     const double nu = 1.004e-6;  // m^2/s
 
-    // Field Variabel 3D Universal (Kecepatan u, v, w & Tekanan p)
+    // Field Variabel 3D Universal
     std::vector<double> u, v, w, p;
     std::vector<double> u_next, v_next, w_next;
 
@@ -77,21 +77,28 @@ public:
                     }
 
                     // Handlers Tipe Elemen Gmsh
-                    if (type == 1 || type == 2 || type == 3) {
-                        // Elemen Batas 1D/2D (Line, Triangle, Quad Face)
-                        int num_pts = (type == 1) ? 2 : ((type == 2) ? 3 : 4);
+                    if (type == 1 || type == 2) {
+                        // Line atau Triangle boundary
+                        int num_pts = (type == 1) ? 2 : 3;
                         BoundaryElement b;
                         b.id = id;
                         b.physical_tag = ptag;
                         b.node_ids.resize(num_pts);
                         for (int k = 0; k < num_pts; ++k) file >> b.node_ids[k];
-                        
-                        // Jika domain 3D belum aktif, simpan sebagai boundary
-                        if (domain_dim < 3) boundaries.push_back(b);
+                        boundaries.push_back(b);
 
-                    } else if (type == 3 && domain_dim == 2) { 
-                        // Elemen Domain 2D Quad (4 Node)
-                        parseCell(id, 2, 4, file);
+                    } else if (type == 3) { 
+                        // Quad Element (bisa boundary 3D atau domain 2D)
+                        if (domain_dim == 3) {
+                            BoundaryElement b;
+                            b.id = id;
+                            b.physical_tag = ptag;
+                            b.node_ids.resize(4);
+                            for (int k = 0; k < 4; ++k) file >> b.node_ids[k];
+                            boundaries.push_back(b);
+                        } else {
+                            parseCell(id, 2, 4, file);
+                        }
 
                     } else if (type == 5) { 
                         // Elemen Domain 3D Hexahedron (8 Node)
@@ -102,8 +109,9 @@ public:
                         // Elemen Domain 3D Tetrahedron (4 Node)
                         domain_dim = 3;
                         parseCell(id, 3, 4, file);
+
                     } else {
-                        // Skip tipe elemen yang tidak dikenali
+                        // Skip tipe elemen tidak dikenal
                         std::string dummy;
                         std::getline(file, dummy);
                     }
@@ -139,12 +147,9 @@ private:
             sum_z += nodes[c.node_ids[k]].z;
         }
 
-        // Hitung Pusat Sel (Centroid)
         c.xc = sum_x / num_nodes;
         c.yc = sum_y / num_nodes;
         c.zc = sum_z / num_nodes;
-        
-        // Estimasi Volume/Luas sederhana
         c.volume = 1.0; 
         cells.push_back(c);
     }
@@ -159,13 +164,10 @@ public:
             // 1. Solusi Momentum Pararel (Mendukung Kecepatan u, v, w)
             #pragma omp parallel for schedule(static)
             for (size_t i = 0; i < cells.size(); ++i) {
-                
-                // Laplasian & Gradien Disederhanakan untuk Tes Parallelism
                 double du_dx = 0.01 * u[i];
                 double dv_dy = 0.01 * v[i];
                 double dw_dz = (domain_dim == 3) ? 0.01 * w[i] : 0.0;
 
-                // Update Momentum U, V, W
                 u_next[i] = u[i] + dt * (-u[i] * du_dx);
                 v_next[i] = v[i] + dt * (-v[i] * dv_dy);
                 if (domain_dim == 3) {
@@ -173,7 +175,7 @@ public:
                 }
             }
 
-            // 2. Aplikasi Boundary Conditions Paralel (2D & 3D)
+            // 2. Aplikasi Boundary Conditions Paralel
             #pragma omp parallel for schedule(dynamic)
             for (size_t i = 0; i < cells.size(); ++i) {
                 // Inlet Condition (X mendekati 0) -> Kecepatan masuk U = 1.0 m/s
@@ -182,7 +184,7 @@ public:
                     v_next[i] = 0.0;
                     w_next[i] = 0.0;
                 }
-                // No-Slip Wall Condition pada batas Y atau Z
+                // No-Slip Wall Condition
                 if (cells[i].yc < 0.05 || (domain_dim == 3 && cells[i].zc < 0.05)) {
                     u_next[i] = 0.0;
                     v_next[i] = 0.0;
@@ -207,6 +209,69 @@ public:
         }
         std::cout << "Simulasi CFD " << domain_dim << "D Berhasil!" << std::endl;
     }
+
+    // Fungsi Export Hasil ke Format VTK ASCII (ParaView Compatible)
+    void writeVTK(const std::string& output_filename) {
+        std::ofstream vtk_file(output_filename);
+        if (!vtk_file.is_open()) {
+            std::cerr << "Error: Tidak dapat membuat file VTK " << output_filename << std::endl;
+            return;
+        }
+
+        vtk_file << "# vtk DataFile Version 3.0\n";
+        vtk_file << "CFD Result Output\n";
+        vtk_file << "ASCII\n";
+        vtk_file << "DATASET UNSTRUCTURED_GRID\n";
+
+        // Tulis Nodes
+        vtk_file << "POINTS " << nodes.size() - 1 << " double\n";
+        for (size_t i = 1; i < nodes.size(); ++i) {
+            vtk_file << nodes[i].x << " " << nodes[i].y << " " << nodes[i].z << "\n";
+        }
+
+        // Tulis Cells
+        size_t total_cell_entries = 0;
+        for (const auto& c : cells) {
+            total_cell_entries += (c.node_ids.size() + 1);
+        }
+
+        vtk_file << "CELLS " << cells.size() << " " << total_cell_entries << "\n";
+        for (const auto& c : cells) {
+            vtk_file << c.node_ids.size();
+            for (int nid : c.node_ids) {
+                vtk_file << " " << (nid - 1); // Indeks 0-based untuk VTK
+            }
+            vtk_file << "\n";
+        }
+
+        // Tulis Cell Types
+        vtk_file << "CELL_TYPES " << cells.size() << "\n";
+        for (const auto& c : cells) {
+            if (c.dim == 2) {
+                vtk_file << "9\n";  // VTK_QUAD = 9
+            } else {
+                vtk_file << (c.node_ids.size() == 8 ? "12\n" : "10\n"); // VTK_HEXAHEDRON = 12, VTK_TETRA = 10
+            }
+        }
+
+        // Tulis Cell Data (Kecepatan dan Tekanan di pusat sel)
+        vtk_file << "CELL_DATA " << cells.size() << "\n";
+        
+        // Vektor Kecepatan
+        vtk_file << "VECTORS Velocity double\n";
+        for (size_t i = 0; i < cells.size(); ++i) {
+            vtk_file << u[i] << " " << v[i] << " " << w[i] << "\n";
+        }
+
+        // Skalar Tekanan
+        vtk_file << "SCALARS Pressure double 1\n";
+        vtk_file << "LOOKUP_TABLE default\n";
+        for (size_t i = 0; i < cells.size(); ++i) {
+            vtk_file << p[i] << "\n";
+        }
+
+        std::cout << "[VTK Output] File hasil disimpan ke: " << output_filename << std::endl;
+    }
 };
 
 int main(int argc, char* argv[]) {
@@ -222,8 +287,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Jalankan solver
+    // Eksekusi simulasi
     solver.solveParallel(500, 0.001);
+
+    // Export hasil ke VTK untuk visualisasi di ParaView
+    solver.writeVTK("output.vtk");
 
     return 0;
 }

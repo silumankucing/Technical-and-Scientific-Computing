@@ -1,0 +1,58 @@
+# ===================================================================
+# 3D THERMAL CONDUCTION SIMULATOR INPUT CONFIGURATION
+# ===================================================================
+
+# Spatial Discretization
+nx = 100
+ny = 100
+nz = 100
+dx = 0.001
+dy = 0.001
+dz = 0.001
+
+# Temporal Parameters
+dt = 0.00005
+max_steps = 2000
+output_interval = 200
+
+# Base Material Properties
+rho = 7850.0          # Density (kg/m^3)
+cp = 490.0            # Specific heat capacity (J/(kg*K))
+k_ref = 50.0          # Base thermal conductivity (W/(m*K))
+alpha_k = 0.001       # Temp coefficient for k(T) = k_ref * (1 + alpha_k * (T - T_ref))
+T_ref = 300.0         # Reference temperature (K)
+
+# Domain Initial & Volumetric Source Terms
+T_init = 300.0        # Initial uniform domain temperature (K)
+q_vol = 500000.0      # Volumetric heat generation rate (W/m^3)
+
+# Boundary Conditions
+# Types: DIRICHLET (fixed T), NEUMANN (fixed flux q"), ROBIN (convective h, T_inf)
+# Values:
+#   DIRICHLET: value1 = T_fixed (K)
+#   NEUMANN:   value1 = heat_flux (W/m^2) [positive into domain]
+#   ROBIN:     value1 = h (W/(m^2*K)), value2 = T_inf (K)
+
+bc_xmin_type = DIRICHLET
+bc_xmin_val1 = 500.0
+bc_xmin_val2 = 0.0
+
+bc_xmax_type = ROBIN
+bc_xmax_val1 = 150.0
+bc_xmax_val2 = 300.0
+
+bc_ymin_type = NEUMANN
+bc_ymin_val1 = 0.0       # Adiabatic / Insulated
+bc_ymin_val2 = 0.0
+
+bc_ymax_type = NEUMANN
+bc_ymax_val1 = 0.0       # Adiabatic / Insulated
+bc_ymax_val2 = 0.0
+
+bc_zmin_type = DIRICHLET
+bc_zmin_val1 = 300.0
+bc_zmin_val2 = 0.0
+
+bc_zmax_type = ROBIN
+bc_zmax_val1 = 50.0
+bc_zmax_val2 = 300.0
